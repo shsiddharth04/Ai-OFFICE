@@ -33,5 +33,5 @@ export async function generateRoleResponse(roleId: string, userMessage: string) 
     throw new Error(`API call failed: ${response.statusText}`);
   }
 
-  return await response.json();
+  return response;
 }
