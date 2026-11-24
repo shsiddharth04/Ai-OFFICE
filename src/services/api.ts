@@ -1,37 +1,164 @@
-export async function testPost() {
-  const response = await fetch('https://httpbin.org/post', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message: 'Hello from AI Studio',
-    }),
-  });
+import { GoogleGenAI } from '@google/genai';
 
-  if (!response.ok) {
-    throw new Error(`API call failed: ${response.statusText}`);
-  }
+export type Provider = 'gemini' | 'openai' | 'anthropic';
 
-  return await response.json();
+export const PROVIDER_KEY_MAP: Record<Provider, string> = {
+  gemini: 'ai_office_key_gemini',
+  openai: 'ai_office_key_openai',
+  anthropic: 'ai_office_key_anthropic',
+};
+
+export const PROVIDER_STORAGE_KEY = 'ai_office_provider';
+
+export const DEFAULT_MODELS: Record<Provider, string> = {
+  gemini: 'gemini-2.0-flash',
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-haiku-4-5-20251001',
+};
+
+export interface HistoryEntry {
+  role: 'user' | 'model';
+  text: string;
 }
 
-export async function generateRoleResponse(roleId: string, userMessage: string) {
-  const response = await fetch('https://gcnzboujpptdxgvawbdw.supabase.co/functions/v1/generate-role-response', {
+export async function* streamRoleResponse(
+  provider: Provider,
+  systemPrompt: string,
+  history: HistoryEntry[],
+  userMessage: string,
+  apiKey: string,
+): AsyncGenerator<string> {
+  switch (provider) {
+    case 'gemini':
+      yield* streamGemini(systemPrompt, history, userMessage, apiKey);
+      break;
+    case 'openai':
+      yield* streamOpenAI(systemPrompt, history, userMessage, apiKey);
+      break;
+    case 'anthropic':
+      yield* streamAnthropic(systemPrompt, history, userMessage, apiKey);
+      break;
+  }
+}
+
+async function* streamGemini(
+  systemPrompt: string,
+  history: HistoryEntry[],
+  userMessage: string,
+  apiKey: string,
+): AsyncGenerator<string> {
+  const ai = new GoogleGenAI({ apiKey });
+  const contents = [
+    ...history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
+    { role: 'user' as const, parts: [{ text: userMessage }] },
+  ];
+  const stream = await ai.models.generateContentStream({
+    model: DEFAULT_MODELS.gemini,
+    contents,
+    config: { systemInstruction: systemPrompt },
+  });
+  for await (const chunk of stream) {
+    if (chunk.text) yield chunk.text;
+  }
+}
+
+async function* streamOpenAI(
+  systemPrompt: string,
+  history: HistoryEntry[],
+  userMessage: string,
+  apiKey: string,
+): AsyncGenerator<string> {
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history.map((h) => ({
+      role: h.role === 'model' ? 'assistant' : 'user',
+      content: h.text,
+    })),
+    { role: 'user', content: userMessage },
+  ];
+
+  const res = await fetch('/api/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdjbnpib3VqcHB0ZHhndmF3YmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwNDIzMDAsImV4cCI6MjA4NzYxODMwMH0.MwsLJJXzpp7uVFISu9uSea7k75m1WVFC_CB7TUUCRY4',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model: DEFAULT_MODELS.openai, stream: true, messages }),
+  });
+
+  if (!res.ok) throw new Error(`OpenAI: ${await res.text()}`);
+
+  yield* readSSE(res, (data) => {
+    if (data === '[DONE]') return null;
+    const json = JSON.parse(data);
+    return json.choices?.[0]?.delta?.content ?? null;
+  });
+}
+
+async function* streamAnthropic(
+  systemPrompt: string,
+  history: HistoryEntry[],
+  userMessage: string,
+  apiKey: string,
+): AsyncGenerator<string> {
+  const messages = [
+    ...history.map((h) => ({
+      role: h.role === 'model' ? 'assistant' : 'user',
+      content: h.text,
+    })),
+    { role: 'user', content: userMessage },
+  ];
+
+  const res = await fetch('/api/anthropic/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      role_id: roleId,
-      user_message: userMessage,
+      model: DEFAULT_MODELS.anthropic,
+      max_tokens: 1024,
+      stream: true,
+      system: systemPrompt,
+      messages,
     }),
   });
 
-  if (!response.ok) {
-    throw new Error(`API call failed: ${response.statusText}`);
-  }
+  if (!res.ok) throw new Error(`Anthropic: ${await res.text()}`);
 
-  return response;
+  yield* readSSE(res, (data) => {
+    const json = JSON.parse(data);
+    if (json.type === 'content_block_delta' && json.delta?.type === 'text_delta') {
+      return json.delta.text;
+    }
+    return null;
+  });
+}
+
+async function* readSSE(
+  res: Response,
+  parse: (data: string) => string | null,
+): AsyncGenerator<string> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      try {
+        const text = parse(data);
+        if (text) yield text;
+      } catch {
+        // malformed SSE chunk — skip
+      }
+    }
+  }
 }
