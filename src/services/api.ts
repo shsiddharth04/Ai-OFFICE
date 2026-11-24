@@ -11,7 +11,7 @@ export const PROVIDER_KEY_MAP: Record<Provider, string> = {
 export const PROVIDER_STORAGE_KEY = 'ai_office_provider';
 
 export const DEFAULT_MODELS: Record<Provider, string> = {
-  gemini: 'gemini-2.0-flash',
+  gemini: 'gemini-3.0-flash',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5-20251001',
 };
