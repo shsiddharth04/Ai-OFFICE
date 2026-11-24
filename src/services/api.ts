@@ -12,7 +12,7 @@ export const PROVIDER_STORAGE_KEY = 'ai_office_provider';
 export const GEMINI_MODEL_STORAGE_KEY = 'ai_office_model_gemini';
 
 export const DEFAULT_MODELS: Record<Provider, string> = {
-  gemini: 'gemini-1.5-flash',
+  gemini: 'gemini-3.8-flash',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5-20251001',
 };
