@@ -9,9 +9,10 @@ export const PROVIDER_KEY_MAP: Record<Provider, string> = {
 };
 
 export const PROVIDER_STORAGE_KEY = 'ai_office_provider';
+export const GEMINI_MODEL_STORAGE_KEY = 'ai_office_model_gemini';
 
 export const DEFAULT_MODELS: Record<Provider, string> = {
-  gemini: 'gemini-3.8-flash',
+  gemini: 'gemini-1.5-flash',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5-20251001',
 };
@@ -27,10 +28,11 @@ export async function* streamRoleResponse(
   history: HistoryEntry[],
   userMessage: string,
   apiKey: string,
+  geminiModel: string,
 ): AsyncGenerator<string> {
   switch (provider) {
     case 'gemini':
-      yield* streamGemini(systemPrompt, history, userMessage, apiKey);
+      yield* streamGemini(systemPrompt, history, userMessage, apiKey, geminiModel);
       break;
     case 'openai':
       yield* streamOpenAI(systemPrompt, history, userMessage, apiKey);
@@ -46,6 +48,7 @@ async function* streamGemini(
   history: HistoryEntry[],
   userMessage: string,
   apiKey: string,
+  model: string,
 ): AsyncGenerator<string> {
   const ai = new GoogleGenAI({ apiKey });
   const contents = [
@@ -60,7 +63,7 @@ async function* streamGemini(
     if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt));
     try {
       const stream = await ai.models.generateContentStream({
-        model: DEFAULT_MODELS.gemini,
+        model,
         contents,
         config: { systemInstruction: systemPrompt },
       });
@@ -70,12 +73,12 @@ async function* streamGemini(
       return;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
-      const is503 =
+      const isRetryable =
         lastError.message.includes('503') || lastError.message.includes('UNAVAILABLE');
-      if (!is503) throw lastError;
+      if (!isRetryable) throw lastError;
     }
   }
-  throw new Error(`Gemini is overloaded. Please try again in a moment. (${lastError.message})`);
+  throw new Error(`Gemini overloaded after 3 attempts. Try again shortly.\n\n${lastError.message}`);
 }
 
 async function* streamOpenAI(

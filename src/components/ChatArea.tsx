@@ -8,6 +8,7 @@ interface ChatAreaProps {
   selectedRoleId: string;
   provider: Provider;
   apiKey: string;
+  geminiModel: string;
 }
 
 interface Message {
@@ -31,7 +32,7 @@ function saveMessages(map: Record<string, Message[]>) {
   localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(map));
 }
 
-export function ChatArea({ selectedRoleId, provider, apiKey }: ChatAreaProps) {
+export function ChatArea({ selectedRoleId, provider, apiKey, geminiModel }: ChatAreaProps) {
   const [userInput, setUserInput] = useState('');
   const [messagesByRole, setMessagesByRole] = useState<Record<string, Message[]>>(loadMessages);
   const [isLoading, setIsLoading] = useState(false);
@@ -89,6 +90,7 @@ export function ChatArea({ selectedRoleId, provider, apiKey }: ChatAreaProps) {
         history,
         currentInput,
         apiKey,
+        geminiModel,
       )) {
         accumulated += chunk;
         const snap = accumulated;

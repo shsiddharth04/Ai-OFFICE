@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
-import { Provider, PROVIDER_KEY_MAP, PROVIDER_STORAGE_KEY } from './services/api';
+import {
+  Provider,
+  PROVIDER_KEY_MAP,
+  PROVIDER_STORAGE_KEY,
+  GEMINI_MODEL_STORAGE_KEY,
+  DEFAULT_MODELS,
+} from './services/api';
 
 export default function App() {
   const [selectedRoleId, setSelectedRoleId] = useState<string>('');
@@ -16,6 +22,10 @@ export default function App() {
     anthropic: localStorage.getItem(PROVIDER_KEY_MAP.anthropic) ?? '',
   }));
 
+  const [geminiModel, setGeminiModel] = useState<string>(
+    () => localStorage.getItem(GEMINI_MODEL_STORAGE_KEY) ?? DEFAULT_MODELS.gemini,
+  );
+
   const handleProviderChange = (p: Provider) => {
     localStorage.setItem(PROVIDER_STORAGE_KEY, p);
     setProvider(p);
@@ -24,6 +34,11 @@ export default function App() {
   const handleApiKeyChange = (p: Provider, key: string) => {
     localStorage.setItem(PROVIDER_KEY_MAP[p], key);
     setApiKeys((prev) => ({ ...prev, [p]: key }));
+  };
+
+  const handleGeminiModelChange = (model: string) => {
+    localStorage.setItem(GEMINI_MODEL_STORAGE_KEY, model);
+    setGeminiModel(model);
   };
 
   return (
@@ -35,12 +50,15 @@ export default function App() {
         onProviderChange={handleProviderChange}
         apiKeys={apiKeys}
         onApiKeyChange={handleApiKeyChange}
+        geminiModel={geminiModel}
+        onGeminiModelChange={handleGeminiModelChange}
       />
       <main className="flex-1 h-full min-w-0">
         <ChatArea
           selectedRoleId={selectedRoleId}
           provider={provider}
           apiKey={apiKeys[provider]}
+          geminiModel={geminiModel}
         />
       </main>
     </div>

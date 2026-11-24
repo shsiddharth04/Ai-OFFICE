@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ROLES } from '../types';
-import { Users, Briefcase, TrendingUp, PenTool, Lightbulb, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { Users, Briefcase, TrendingUp, PenTool, Lightbulb, KeyRound, Eye, EyeOff, Cpu } from 'lucide-react';
 import { Provider, DEFAULT_MODELS } from '../services/api';
 
 interface SidebarProps {
@@ -10,6 +10,8 @@ interface SidebarProps {
   onProviderChange: (p: Provider) => void;
   apiKeys: Record<Provider, string>;
   onApiKeyChange: (p: Provider, key: string) => void;
+  geminiModel: string;
+  onGeminiModelChange: (model: string) => void;
 }
 
 const PROVIDERS: { id: Provider; label: string }[] = [
@@ -23,6 +25,12 @@ const KEY_PLACEHOLDERS: Record<Provider, string> = {
   openai: 'sk-...',
   anthropic: 'sk-ant-...',
 };
+
+const GEMINI_MODEL_SUGGESTIONS = [
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-2.0-flash-exp',
+];
 
 const RoleIcon = ({ id }: { id: string }) => {
   switch (id) {
@@ -42,20 +50,17 @@ export function Sidebar({
   onProviderChange,
   apiKeys,
   onApiKeyChange,
+  geminiModel,
+  onGeminiModelChange,
 }: SidebarProps) {
   const [showKey, setShowKey] = useState(false);
-  const [drafts, setDrafts] = useState<Record<Provider, string>>({ ...apiKeys });
+  const [keyDrafts, setKeyDrafts] = useState<Record<Provider, string>>({ ...apiKeys });
+  const [modelDraft, setModelDraft] = useState(geminiModel);
 
-  const currentDraft = drafts[provider];
   const currentKey = apiKeys[provider];
 
-  const handleDraftChange = (val: string) => {
-    setDrafts((prev) => ({ ...prev, [provider]: val }));
-  };
-
-  const commitKey = () => {
-    onApiKeyChange(provider, drafts[provider].trim());
-  };
+  const commitKey = () => onApiKeyChange(provider, keyDrafts[provider].trim());
+  const commitModel = () => onGeminiModelChange(modelDraft.trim() || DEFAULT_MODELS.gemini);
 
   return (
     <div className="w-[250px] bg-slate-50 border-r border-slate-200 flex flex-col h-full shrink-0">
@@ -104,10 +109,38 @@ export function Sidebar({
           ))}
         </div>
 
-        {/* Model badge */}
-        <p className="text-[10px] text-slate-400">
-          Model: <span className="font-mono">{DEFAULT_MODELS[provider]}</span>
-        </p>
+        {/* Gemini model selector */}
+        {provider === 'gemini' && (
+          <div>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-1.5">
+              <Cpu className="w-3.5 h-3.5" />
+              Model
+            </div>
+            <input
+              type="text"
+              value={modelDraft}
+              onChange={(e) => setModelDraft(e.target.value)}
+              onBlur={commitModel}
+              onKeyDown={(e) => e.key === 'Enter' && commitModel()}
+              className="w-full text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono"
+            />
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {GEMINI_MODEL_SUGGESTIONS.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => { setModelDraft(m); onGeminiModelChange(m); }}
+                  className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                    geminiModel === m
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-600'
+                      : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  {m.replace('gemini-', '')}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* API key input */}
         <div>
@@ -118,8 +151,10 @@ export function Sidebar({
           <div className="relative">
             <input
               type={showKey ? 'text' : 'password'}
-              value={currentDraft}
-              onChange={(e) => handleDraftChange(e.target.value)}
+              value={keyDrafts[provider]}
+              onChange={(e) =>
+                setKeyDrafts((prev) => ({ ...prev, [provider]: e.target.value }))
+              }
               onBlur={commitKey}
               onKeyDown={(e) => e.key === 'Enter' && commitKey()}
               placeholder={KEY_PLACEHOLDERS[provider]}
