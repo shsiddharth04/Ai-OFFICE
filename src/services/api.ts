@@ -52,14 +52,30 @@ async function* streamGemini(
     ...history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
     { role: 'user' as const, parts: [{ text: userMessage }] },
   ];
-  const stream = await ai.models.generateContentStream({
-    model: DEFAULT_MODELS.gemini,
-    contents,
-    config: { systemInstruction: systemPrompt },
-  });
-  for await (const chunk of stream) {
-    if (chunk.text) yield chunk.text;
+
+  const MAX_RETRIES = 3;
+  let lastError: Error = new Error('Unknown error');
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt));
+    try {
+      const stream = await ai.models.generateContentStream({
+        model: DEFAULT_MODELS.gemini,
+        contents,
+        config: { systemInstruction: systemPrompt },
+      });
+      for await (const chunk of stream) {
+        if (chunk.text) yield chunk.text;
+      }
+      return;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      const is503 =
+        lastError.message.includes('503') || lastError.message.includes('UNAVAILABLE');
+      if (!is503) throw lastError;
+    }
   }
+  throw new Error(`Gemini is overloaded. Please try again in a moment. (${lastError.message})`);
 }
 
 async function* streamOpenAI(
